@@ -1,0 +1,33 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": "auth != null",
+
+    "readings": {
+      ".read": true,
+      ".write": true,
+      "$readingId": {
+        ".validate": "newData.hasChildren(['timestamp', 'currentAmps', 'label', 'confidence'])"
+      }
+    },
+
+    "alerts": {
+      ".read": true,
+      ".write": true,
+      "$alertId": {
+        ".validate": "newData.hasChildren(['type', 'confidence', 'current', 'timestamp'])"
+      }
+    },
+
+    "device": {
+      "status": {
+        ".read": true,
+        ".write": true
+      },
+      "config": {
+        ".read": true,
+        ".write": "auth != null"
+      }
+    }
+  }
+}

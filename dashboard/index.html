@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Appliance Care — Smart Home Monitor</title>
+  <meta name="description" content="Friendly smart home dashboard to monitor your appliances and protect them from damage." />
+
+  <!-- Favicon -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Firebase SDK (compat mode for easy setup) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+<div class="app-wrapper">
+
+  <!-- ══════════════════════════════════════
+       TOPBAR
+  ══════════════════════════════════════ -->
+  <header class="topbar" role="banner">
+    <div class="logo">
+      <div class="logo-icon" aria-hidden="true">🛡️</div>
+      <span class="logo-text">Appliance Care</span>
+      <span class="logo-version">HomeKit</span>
+    </div>
+
+    <div class="topbar-status">
+      <span class="uptime-pill" id="uptimePill" aria-label="System uptime">↑ 00:00:00</span>
+      <div class="connection-badge disconnected" id="connBadge" aria-live="polite">
+        <span class="conn-dot" aria-hidden="true"></span>
+        <span id="connText">Demo Mode</span>
+      </div>
+      <span class="topbar-time" id="topbarTime" aria-label="Current time">--:--:--</span>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════
+       FIREBASE CONFIG PANEL
+  ══════════════════════════════════════ -->
+  <section class="config-panel" aria-label="Firebase Configuration">
+    <h3><span>🏠</span> Connection Setup <span style="color:var(--text-dim); text-transform:none; font-weight:400;">(optional for live data)</span></h3>
+    <div class="config-fields">
+      <div class="config-field">
+        <label for="fbProjectId">Firebase Project ID</label>
+        <input
+          type="text"
+          id="fbProjectId"
+          placeholder="your-project-id"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Firebase Project ID"
+        />
+      </div>
+      <div class="config-field">
+        <label for="fbSecret">Database Secret <span style="color:var(--text-dim)">(optional)</span></label>
+        <input
+          type="password"
+          id="fbSecret"
+          placeholder="••••••••••••••••"
+          autocomplete="off"
+          aria-label="Firebase database secret"
+        />
+      </div>
+      <button class="btn-connect" id="btnConnect" aria-label="Connect to Firebase">
+        Connect Live →
+      </button>
+    </div>
+    <div id="errorMsg" style="display:none; margin-top:10px; font-size:12px; color:var(--crit-color);"></div>
+  </section>
+
+  <!-- ══════════════════════════════════════
+       DEMO MODE BANNER
+  ══════════════════════════════════════ -->
+  <div class="demo-banner" aria-live="polite">
+    <span>⚡</span>
+    <span><strong>Preview Mode</strong> — Showing simulated smart home data. Connect your device above for real data.</span>
+    <span style="margin-left:auto; display:flex; gap:10px; flex-shrink:0;">
+      <button
+        id="btnSimAnomaly"
+        style="padding:4px 12px; background:rgba(246,173,85,0.12); border:1px solid rgba(246,173,85,0.3); border-radius:6px; color:var(--warn-color); font-size:11px; cursor:pointer;"
+        title="Simulate a Warning/Critical anomaly event"
+        aria-label="Simulate anomaly event"
+      >⚡ Sim Anomaly</button>
+      <button
+        id="btnSimTamper"
+        style="padding:4px 12px; background:rgba(183,148,244,0.12); border:1px solid rgba(183,148,244,0.3); border-radius:6px; color:var(--tamper-color); font-size:11px; cursor:pointer;"
+        title="Simulate a tamper detection event"
+        aria-label="Simulate tamper event"
+      >🔒 Sim Lockout</button>
+    </span>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       TAMPER LOCKOUT BANNER
+  ══════════════════════════════════════ -->
+  <div class="tamper-banner" id="tamperBanner" role="alert" aria-live="assertive">
+    <div class="tamper-icon">🔒</div>
+    <div class="tamper-text">
+      <h4>DEVICE PAUSED — Inspection Required</h4>
+      <p>We detected unusual physical movement and paused the appliance to protect it from damage. Please check the device before resuming.</p>
+    </div>
+    <button class="btn-reset-tamper" id="btnResetTamper" aria-label="Resume operation">Resume Operation</button>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       MAIN GRID
+  ══════════════════════════════════════ -->
+  <main class="main-grid" role="main">
+
+    <!-- ── Health Status Card ── -->
+    <section class="card health-card" aria-label="Device Health Status">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🌿</span> Current Status
+        </div>
+        <span
+          style="font-size:10px; color:var(--text-dim); font-family:'JetBrains Mono',monospace;"
+          data-tooltip="Powered by Smart AI"
+        >AI Protected ℹ️</span>
+      </div>
+
+      <div class="health-display">
+
+        <!-- Confidence Ring Gauge -->
+        <div class="confidence-ring-wrapper" aria-label="Confidence score gauge">
+          <svg class="confidence-ring-svg" viewBox="0 0 160 160" aria-hidden="true">
+            <circle class="ring-track" cx="80" cy="80" r="70" />
+            <circle class="ring-fill" id="ringFill" cx="80" cy="80" r="70" />
+          </svg>
+          <div class="ring-center">
+            <div class="ring-pct" id="ringPct" aria-live="polite">--%</div>
+            <div class="ring-label">Confidence</div>
+          </div>
+        </div>
+
+        <!-- Health Status Badge -->
+        <div class="status-badge healthy" id="statusBadge" aria-live="polite" aria-atomic="true">
+          ✅ Initializing…
+        </div>
+
+        <!-- Stats Row -->
+        <div class="stats-row">
+          <div class="stat-item" data-tooltip="Real-time current draw in Amperes">
+            <div class="stat-value" id="statCurrent" aria-live="polite">--</div>
+            <div class="stat-label">Energy Usage</div>
+          </div>
+          <div class="stat-item" data-tooltip="Total sensor readings processed">
+            <div class="stat-value" id="statReadings" aria-live="polite">0</div>
+            <div class="stat-label">Readings</div>
+          </div>
+          <div class="stat-item" data-tooltip="Latest acoustic event status">
+            <div class="stat-value" id="statAcoustic" style="font-size:13px; line-height:1.4;" aria-live="polite">— None</div>
+            <div class="stat-label">Acoustic</div>
+          </div>
+          <div class="stat-item" data-tooltip="Warning threshold: 3.2A | Critical: 4.2A">
+            <div class="stat-value" style="font-size:13px; color:var(--accent-yellow);">3.2 / 4.2</div>
+            <div class="stat-label">Thresholds (A)</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── Current Draw Chart ── -->
+    <section class="card chart-card" aria-label="Current Draw Chart">
+      <div class="card-header">
+        <div class="card-title">
+          <span>⚡</span> Live Energy Usage
+        </div>
+        <span style="font-size:10px; color:var(--text-dim); font-family:'JetBrains Mono',monospace;">
+          Last 30 readings · ACS712 Sensor
+        </span>
+      </div>
+
+      <div class="chart-wrapper">
+        <canvas id="currentChart" aria-label="Current draw over time line chart" role="img"></canvas>
+      </div>
+
+      <div class="chart-legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#63b3ed;"></div>
+          Current Draw
+        </div>
+      </div>
+      <div class="threshold-info">
+        <div class="threshold-item">
+          <div class="threshold-line" style="background:rgba(246,173,85,0.6);"></div>
+          Warning (3.2 A)
+        </div>
+        <div class="threshold-item">
+          <div class="threshold-line" style="background:rgba(252,129,129,0.6);"></div>
+          Critical (4.2 A)
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Alerts Feed ── -->
+    <section class="card alerts-card" aria-label="Anomaly Alert History">
+      <div class="card-header">
+        <div class="card-title">
+          <span>📋</span> Recent Activity
+          <span class="badge-count" id="alertBadge" style="display:none;">0</span>
+        </div>
+        <div class="alerts-header-actions">
+          <button class="btn-clear" id="btnClearAlerts" aria-label="Clear all alerts">Clear</button>
+        </div>
+      </div>
+
+      <div class="alerts-feed" id="alertsFeed" aria-live="polite" aria-relevant="additions">
+        <div class="no-alerts">
+          <span>🛡️</span>
+          Everything looks great! Your appliance is running smoothly.
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ══════════════════════════════════════
+       FOOTER
+  ══════════════════════════════════════ -->
+  <footer class="footer" role="contentinfo">
+    <span>Appliance Care · Smart Home Monitor</span>
+    <span>
+      Powered by Smart AI Technology
+    </span>
+    <span>Your home, protected.</span>
+  </footer>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
